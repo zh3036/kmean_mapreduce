@@ -13,6 +13,7 @@ import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.mapred.Reducer;
 
+
 class DoublePair implements WritableComparable<DoublePair>{
 	private DoubleWritable first;
 	private DoubleWritable second;
@@ -45,6 +46,18 @@ class DoublePair implements WritableComparable<DoublePair>{
 	public Double getSecondDouble() {
 		return new Double(second.toString());
 	}
+    private double pow2(double n){
+        return n*n;
+    }
+    
+    public double euDis(DoublePair p2){
+        double x1 = this.getFirstDouble();
+        double y1 = this.getSecondDouble();
+        double x2 = p2.getFirstDouble();
+        double y2 = p2.getSecondDouble();
+        return Math.sqrt(pow2(x2-x1)+pow2(y2-y1));
+
+    }
 	
 	@Override
 	public void write(DataOutput out) throws IOException {
@@ -81,24 +94,6 @@ class DoublePair implements WritableComparable<DoublePair>{
 		return second.compareTo(tp.second);
 	}
 }
-/*
-class Point implements WritableComparable {
-    public double x;
-    public double y;
-    double pow2(double n){
-        return n*n;
-    }
-    public double EuDis(Point p2){
-        return Math.sqrt(pow2(this.x-p2.x)+pow2(this.y-p2.y));
-    }
-    @Override
-    public int compareTo(Point p2){
-        return  
-    }
-
-
-}
-*/
 
 @SuppressWarnings("deprecation")
 public class KMeans {
@@ -109,12 +104,13 @@ public class KMeans {
     public static String DATA_FILE_NAME = "/data.txt";
     public static String JOB_NAME = "KMeans";
     public static String SPLITTER = "\t| ";
+    public static String DLI ="(,| |\t|\n)";
     //public static String SPLITTER = "\n";
     //public static List<Double> mCenters = new ArrayList<Double>();
     public static List<DoublePair> mCenters = new ArrayList<DoublePair>();
     public static long numPoints;
     public static long numCetners;
-    public static int maxIter;
+    public static int maxIter=20;
 
 
     /*
@@ -140,10 +136,11 @@ public class KMeans {
                         // Read the file split by the splitter and store it in
                         // the list
                         while ((line = cacheReader.readLine()) != null) {
-                            String[] temp = line.split(SPLITTER);
-                            System.out.println("this is center");
-                            System.out.println(temp[0]);
-                            mCenters.add(Double.parseDouble(temp[0]));
+                            Scanner sc = new Scanner(line).useDelimiter(DLI);
+                            double x = sc.nextDouble();
+                            double y = sc.nextDouble();
+                            DoublePair point = new DoublePair(x,y);
+                            mCenters.add(point);
                         }
                     } finally {
                         cacheReader.close();
@@ -163,50 +160,60 @@ public class KMeans {
                 OutputCollector<DoublePair, DoublePair> output,
                 Reporter reporter) throws IOException {
             String line = value.toString();
-            double point = Double.parseDouble(line);
-            double min1, min2 = Double.MAX_VALUE, nearest_center = mCenters
-                    .get(0);
+            String[] raw = line.split(DLI);
+
+            DoublePair point = new DoublePair(Double.parseDouble(raw[0]),
+                                          Double.parseDouble(raw[1]));
+
+
+            
+            int nearest_center = 0;
+            double minDis=mCenters.get(0).euDis(point);
+            double temDis;
             // Find the minimum center from a point
-            for (double c : mCenters) {
-                min1 = c - point;
-                if (Math.abs(min1) < Math.abs(min2)) {
-                    nearest_center = c;
-                    min2 = min1;
+            for (int i = 1; i<mCenters.size();i++){
+                temDis = mCenters.get(i).euDis(point); 
+                if(temDis<minDis){
+                    minDis = temDis;
+                    nearest_center = i;
                 }
             }
             // Emit the nearest center and the point
-            output.collect(new DoubleWritable(nearest_center),
-                    new DoubleWritable(point));
+            output.collect(mCenters.get(nearest_center),point);
         }
     }
 
     public static class Reduce extends MapReduceBase implements
-            Reducer<DoubleWritable, DoubleWritable, DoubleWritable, Text> {
+            Reducer<DoublePair, DoublePair, DoublePair, IntWritable> {
 
         /*
          * Reduce function will emit all the points to that center and calculate
          * the next center for these points
          */
         @Override
-        public void reduce(DoubleWritable key, Iterator<DoubleWritable> values,
-                OutputCollector<DoubleWritable, Text> output, Reporter reporter)
+        public void reduce(DoublePair key, Iterator<DoublePair> values,
+                OutputCollector<DoublePair, IntWritable> output, Reporter reporter)
                 throws IOException {
-            double newCenter;
-            double sum = 0;
+
+
+            double newX=0;
+            double newY=0;
             int no_elements = 0;
-            String points = "";
             while (values.hasNext()) {
-                double d = values.next().get();
-                points = points + " " + Double.toString(d);
-                sum = sum + d;
+                DoublePair d = values.next();
+                newX += d.getFirstDouble();
+                newY += d.getSecondDouble();
                 ++no_elements;
             }
 
             // We have new center now
-            newCenter = sum / no_elements;
+            newX /= no_elements;
+            newY /= no_elements;
+
+            DoublePair newCenter = new DoublePair(newX,newY);
 
             // Emit new center and point
-            output.collect(new DoubleWritable(newCenter), new Text(points));
+            output.collect(newCenter, new IntWritable(no_elements));
         }
     }
 
@@ -217,6 +224,10 @@ public class KMeans {
     public static void run(String[] args) throws Exception {
         IN = args[0];
         OUT = args[1];
+        numPoints = Integer.parseInt(args[2]);
+        numCetners = Integer.parseInt(args[3]);
+        maxIter = Integer.parseInt(args[4]);
+
         String input = IN;
         String output = OUT + System.nanoTime();
         String again_input = output;
@@ -224,7 +235,7 @@ public class KMeans {
         // Reiterating till the convergence
         int iteration = 0;
         boolean isdone = false;
-        while (isdone == false && iteration <10) {
+        while (isdone == false && iteration <maxIter) {
              
             JobConf conf = new JobConf(KMeans.class);
             conf.setNumReduceTasks(1);
