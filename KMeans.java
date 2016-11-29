@@ -110,7 +110,12 @@ public class KMeans {
     public static String JOB_NAME = "KMeans";
     public static String SPLITTER = "\t| ";
     //public static String SPLITTER = "\n";
-    public static List<Double> mCenters = new ArrayList<Double>();
+    //public static List<Double> mCenters = new ArrayList<Double>();
+    public static List<DoublePair> mCenters = new ArrayList<DoublePair>();
+    public static long numPoints;
+    public static long numCetners;
+    public static int maxIter;
+
 
     /*
      * In Mapper class we are overriding configure function. In this we are
@@ -119,7 +124,7 @@ public class KMeans {
      */
     
     public static class Map extends MapReduceBase implements
-            Mapper<LongWritable, Text, DoubleWritable, DoubleWritable> {
+            Mapper<LongWritable, Text, DoublePair, DoublePair> {
         @Override
         public void configure(JobConf job) {
             try {
@@ -155,7 +160,7 @@ public class KMeans {
          */
         @Override
         public void map(LongWritable key, Text value,
-                OutputCollector<DoubleWritable, DoubleWritable> output,
+                OutputCollector<DoublePair, DoublePair> output,
                 Reporter reporter) throws IOException {
             String line = value.toString();
             double point = Double.parseDouble(line);
