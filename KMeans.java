@@ -110,7 +110,7 @@ public class KMeans {
     public static List<DoublePair> mCenters = new ArrayList<DoublePair>();
     public static long numPoints;
     public static long numCetners;
-    public static int maxIter=20;
+    public static int maxIter=1;
 
 
     /*
@@ -245,16 +245,14 @@ public class KMeans {
                 DistributedCache.addCacheFile(hdfsPath.toUri(), conf);
             } else {
                 Path hdfsPath = new Path(again_input + OUTPUT_FILE_NAME);
-                //Path hdfsPath = new Path(again_input);
                 //upload the file to hdfs. Overwrite any existing copy.
                 DistributedCache.addCacheFile(hdfsPath.toUri(), conf);
             }
-
             conf.setJobName(JOB_NAME);
-            conf.setMapOutputKeyClass(DoubleWritable.class);
-            conf.setMapOutputValueClass(DoubleWritable.class);
-            conf.setOutputKeyClass(DoubleWritable.class);
-            conf.setOutputValueClass(Text.class);
+            conf.setMapOutputKeyClass(DoublePair.class);
+            conf.setMapOutputValueClass(DoublePair.class);
+            conf.setOutputKeyClass(DoublePair.class);
+            conf.setOutputValueClass(IntWritable.class);
             conf.setMapperClass(Map.class);
             conf.setReducerClass(Reduce.class);
             conf.setInputFormat(TextInputFormat.class);
@@ -270,11 +268,13 @@ public class KMeans {
             FileSystem fs = FileSystem.get(new Configuration());
             BufferedReader br = new BufferedReader(new InputStreamReader(
                     fs.open(ofile)));
-            List<Double> centers_next = new ArrayList<Double>();
+            List<DoublePair> centers_next = new ArrayList<DoublePair>();
             String line = br.readLine();
             while (line != null) {
-                String[] sp = line.split("\t| ");
-                double c = Double.parseDouble(sp[0]);
+                String[] sp = line.split(DLI);
+                double x = Double.parseDouble(sp[0]);
+                double y = Double.parseDouble(sp[1]);
+                DoublePair c = new DoublePair(x,y);
                 centers_next.add(c);
                 line = br.readLine();
             }
@@ -290,12 +290,14 @@ public class KMeans {
             FileSystem fs1 = FileSystem.get(new Configuration());
             BufferedReader br1 = new BufferedReader(new InputStreamReader(
                     fs1.open(prevfile)));
-            List<Double> centers_prev = new ArrayList<Double>();
+            List<DoublePair> centers_prev = new ArrayList<DoublePair>();
             String l = br1.readLine();
             while (l != null) {
-                String[] sp1 = l.split(SPLITTER);
-                double d = Double.parseDouble(sp1[0]);
-                centers_prev.add(d);
+                String[] sp1 = l.split(DLI);
+                double x1 = Double.parseDouble(sp1[0]);
+                double y1 = Double.parseDouble(sp1[1]);
+                DoublePair c1 = new DoublePair(x1,y1);
+                centers_prev.add(c1);
                 l = br1.readLine();
             }
             br1.close();
@@ -306,15 +308,14 @@ public class KMeans {
             Collections.sort(centers_next);
             Collections.sort(centers_prev);
 
-            Iterator<Double> it = centers_prev.iterator();
-            for (double d : centers_next) {
-                double temp = it.next();
-                if (Math.abs(temp - d) <= 0.1) {
-                    isdone = true;
-                } else {
-                    isdone = false;
-                    break;
-                }
+            double err = 0;
+            Iterator<DoublePair> it = centers_prev.iterator();
+            for (DoublePair d : centers_next) {
+                DoublePair temp = it.next();
+                err += temp.euDis(d);
+            }
+            if(err <=0.05){
+                isdone = true;
             }
             ++iteration;
             again_input = output;
