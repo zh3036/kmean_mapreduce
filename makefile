@@ -12,9 +12,11 @@ rmdir:
 	make rminp
 	make rmout
 uploadinp:
-	hadoop dfs -copyFromLocal data.txt /user/hadoop/kmeans/input/
+	hadoop dfs -copyFromLocal data.txt /user/hadoop/kmeans/input/data.txt
+	hadoop dfs -copyFromLocal centroid.txt /user/hadoop/kmeans/input/centroid.txt
+
 run:
-	hadoop jar KMeans.jar KMeans /user/hadoop/kmeans/input /user/hadoop/kmeans/output
+	hadoop jar KMeans.jar KMeans /user/hadoop/kmeans/input /user/hadoop/kmeans/output 1000 10 1  
 showres:
 	hadoop dfs -cat /user/hadoop/kmeans/output/*
 all:

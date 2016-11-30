@@ -12,6 +12,10 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapred.*;
 import org.apache.hadoop.mapred.Reducer;
+import org.apache.hadoop.fs.FileUtil;
+import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import java.util.Random;
 
 
 class DoublePair implements WritableComparable<DoublePair>{
@@ -93,6 +97,9 @@ class DoublePair implements WritableComparable<DoublePair>{
 		}
 		return second.compareTo(tp.second);
 	}
+    public String toString(){
+        return this.getFirstDouble().toString()+","+this.getSecondDouble().toString();
+    }
 }
 
 @SuppressWarnings("deprecation")
@@ -100,6 +107,7 @@ public class KMeans {
     public static String OUT = "outfile";
     public static String IN = "inputlarger";
     public static String CENTROID_FILE_NAME = "/centroid.txt";
+    public static String Pre_CENTROID = "/centroid_pre.txt";
     public static String OUTPUT_FILE_NAME = "/part-00000";
     public static String DATA_FILE_NAME = "/data.txt";
     public static String JOB_NAME = "KMeans";
@@ -136,11 +144,23 @@ public class KMeans {
                         // Read the file split by the splitter and store it in
                         // the list
                         while ((line = cacheReader.readLine()) != null) {
-                            Scanner sc = new Scanner(line).useDelimiter(DLI);
-                            double x = sc.nextDouble();
-                            double y = sc.nextDouble();
+                        /*int i=0;
+                        line = cacheReader.readLine();
+                        while (i<numCetners){
+                            i++;*/
+                        //    Scanner sc = new Scanner(line).useDelimiter(DLI);
+                        //    double x = sc.nextDouble();
+                        //    double y = sc.nextDouble();
+                            String[] raw = line.split(DLI);
+                            double x = Double.parseDouble(raw[0]);
+                            double y = Double.parseDouble(raw[1]);
                             DoublePair point = new DoublePair(x,y);
+            //                System.out.println(point.toString());
                             mCenters.add(point);
+                            System.out.print("this is map configure we got ");
+                            System.out.print(mCenters.size());
+                            System.out.println(" clusters)");
+                            
                         }
                     } finally {
                         cacheReader.close();
@@ -166,9 +186,13 @@ public class KMeans {
                                           Double.parseDouble(raw[1]));
 
 
+            System.out.println("this is in mapmapper");
+            System.out.println(mCenters.size());
+            System.out.println(point.toString());
+            
             
             int nearest_center = 0;
-            double minDis=mCenters.get(0).euDis(point);
+            double minDis=(mCenters.get(0)).euDis(point);
             double temDis;
             // Find the minimum center from a point
             for (int i = 1; i<mCenters.size();i++){
@@ -221,6 +245,24 @@ public class KMeans {
         run(args);
     }
 
+	public static boolean getMergeInHdfs(String src, String dest, Configuration config) 
+                                 throws IllegalArgumentException, IOException {
+		FileSystem fs = FileSystem.get(config);
+		Path srcPath = new Path(src);
+		Path dstPath = new Path(dest);
+
+		// Check if the path already exists
+		if (!(fs.exists(srcPath))) {
+			return false;
+		}
+
+		if (!(fs.exists(dstPath))) {
+			return false;
+		}
+		return FileUtil.copyMerge(fs, srcPath, fs, dstPath, false, config, null);
+	}
+
+
     public static void run(String[] args) throws Exception {
         IN = args[0];
         OUT = args[1];
@@ -241,6 +283,28 @@ public class KMeans {
             conf.setNumReduceTasks(1);
             if (iteration == 0) {
                 Path hdfsPath = new Path(input + CENTROID_FILE_NAME);
+
+                FileSystem fs0 = FileSystem.get(conf);
+                if(fs0.exists(hdfsPath)){
+                    fs0.delete(hdfsPath,false);
+                }
+                FSDataOutputStream fsout = fs0.create(hdfsPath,true);
+                PrintWriter pw = new PrintWriter(fsout);
+                int i =0;
+                double x=0;
+                double y=0;
+                Random rg = new Random();
+                for (i=0;i<numCetners;i++){
+                    x= rg.nextDouble()*1000;
+                    y= rg.nextDouble()*1000;
+                    pw.print(x);
+                    pw.print(",");
+                    pw.println(y);
+                }
+                pw.close();
+
+
+                
                 // upload the file to hdfs. Overwrite any existing copy.
                 DistributedCache.addCacheFile(hdfsPath.toUri(), conf);
             } else {
@@ -265,7 +329,8 @@ public class KMeans {
             JobClient.runJob(conf);
 
             Path ofile = new Path(output + OUTPUT_FILE_NAME);
-            FileSystem fs = FileSystem.get(new Configuration());
+            //FileSystem fs = FileSystem.get(new Configuration());
+            FileSystem fs = FileSystem.get(conf);
             BufferedReader br = new BufferedReader(new InputStreamReader(
                     fs.open(ofile)));
             List<DoublePair> centers_next = new ArrayList<DoublePair>();
@@ -287,7 +352,8 @@ public class KMeans {
                 prev = again_input + OUTPUT_FILE_NAME;
             }
             Path prevfile = new Path(prev);
-            FileSystem fs1 = FileSystem.get(new Configuration());
+            //FileSystem fs1 = FileSystem.get(new Configuration());
+            FileSystem fs1 = FileSystem.get(conf);
             BufferedReader br1 = new BufferedReader(new InputStreamReader(
                     fs1.open(prevfile)));
             List<DoublePair> centers_prev = new ArrayList<DoublePair>();
